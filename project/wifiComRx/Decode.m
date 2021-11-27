@@ -2,7 +2,7 @@ function [decode_str] = Decode(play_seq,start_pos,config,packet_info_size)
     decode_str = "";
     symbol_sample = config.sps;
     period_sample = floor(config.sample_rate/config.frequency);
-    N_drop = 2;
+    N_drop = 15;
     silent_byte = 2;
     silent_period = 0;
     window = hann(symbol_sample-2*period_sample*silent_period);
@@ -49,7 +49,8 @@ function [attenuation] = ChannelEstimation(pilot_symbol, config, N_drop, period_
     sym_len = size(pilot_symbol,1);
     symbol_cal = pilot_symbol(period_sample*N_drop+1:sym_len-period_sample*N_drop)./window;
     cal_len = sym_len-2*period_sample*N_drop;
-    attenuation = sqrt(2*sum(symbol_cal.*symbol_cal)/cal_len);
+    %attenuation = sqrt(2*sum(symbol_cal.*symbol_cal)/cal_len);
+    attenuation = (max(pilot_symbol)-min(pilot_symbol))/2;
 end
 
 function [time_bias] = SyncModify(est_symbol,period_sample,config,N_drop,window)

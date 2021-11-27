@@ -9,25 +9,52 @@ function [start_seq,packet_info_size] = Sync(header,play_seq,config)
         corr_mat(i,:) = 1/norm_coef*ifft(fft(block).*conj(fft(header)));
     end
     byte_peak = max(abs(corr_mat),[],2);
-    th = 1.5*std(byte_peak);
+    th = 1.6*std(byte_peak);
     exist_pos = find(byte_peak>th);
     exist_corr = corr_mat(byte_peak>th,:);
     [max_val,pos_vote] = max(sum(exist_corr,1));
     start_seq = [];
+    frame = 0;
+    pilot_size = 0;
     for i=1:size(exist_pos,1)-1
         if(exist_pos(i+1)-exist_pos(i)>1)
+            %{
             if byte_peak(exist_pos(i)) > 0.8*byte_peak(exist_pos(i-1))
                 start_seq = [start_seq,exist_pos(i)*chirp_len+pos_vote];
             else
                 start_seq = [start_seq,(exist_pos(i)-1)*chirp_len+pos_vote];
             end
+            %}
+            frame = frame + 1;
+            temp_pos = exist_pos(i)*chirp_len+pos_vote;
+            temp_corr = 1/norm_coef*sum(header.*play_seq(temp_pos-chirp_len+1:temp_pos));
+            if temp_corr > th
+                start_seq = [start_seq,temp_pos];
+            else
+                start_seq = [start_seq,temp_pos-chirp_len];
+            end
+            %{
+            if frame == 1
+                pos = start_seq(1);
+                while true
+                    corr_1 = 1/norm_coef*sum(header.*play_seq(pos-chirp_len+1:pos));
+                    if corr_1>th
+                        pilot_size = pilot_size + 1;
+                    else
+                        break;
+                    end
+                end
+            end
+            %}
         end
     end
-    if byte_peak(exist_pos(i+1))> 0.8*0.8*byte_peak(exist_pos(i))
-        start_seq = [start_seq,((exist_pos(i)+1)*chirp_len+pos_vote)];
+    pilot_size = 3;
+    temp_pos = (exist_pos(i)+1)*chirp_len+pos_vote;
+    temp_corr = 1/norm_coef*sum(header.*play_seq(temp_pos-chirp_len+1:temp_pos));
+    if temp_corr > th
+        start_seq = [start_seq,temp_pos];
     else
-        start_seq = [start_seq,(exist_pos(i)*chirp_len+pos_vote)];
+        start_seq = [start_seq,temp_pos-chirp_len];
     end
-    pilot_size = ceil(size(exist_corr,1)/size(start_seq,2));
-    packet_info_size = floor(diff(start_seq)/config.sps/2)-3-pilot_size;
+    packet_info_size = ceil(diff(start_seq)/config.sps/2)-3-pilot_size;
 end
