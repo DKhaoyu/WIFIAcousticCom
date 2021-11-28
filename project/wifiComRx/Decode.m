@@ -5,19 +5,20 @@ function [decode_str] = Decode(play_seq,start_pos,config,packet_info_size)
     N_drop = 15;
     silent_byte = 2;
     silent_period = 0;
-    window = hann(symbol_sample-2*period_sample*silent_period);
-    window = window(period_sample*N_drop+1:config.sps-period_sample*N_drop-2*period_sample*silent_period);
+    %window = hann(symbol_sample-2*period_sample*silent_period);
+    %window = window(period_sample*N_drop+1:config.sps-period_sample*N_drop-2*period_sample*silent_period);
     for i = 1:size(start_pos,2)
         pos = start_pos(i);
         est_symbol = play_seq(pos+2*silent_byte*symbol_sample:pos+(2*silent_byte+1)*symbol_sample-1);
         est_symbol = est_symbol(silent_period*period_sample+1:symbol_sample-silent_period*period_sample);
-        [attenuation] = ChannelEstimation(est_symbol, config, N_drop, period_sample, window);
-        [time_bias] = SyncModify(est_symbol,period_sample,config,N_drop,window);
+        %[attenuation] = ChannelEstimation(est_symbol, config, N_drop, period_sample, window);
+        attenuation = ChannelEstimation(est_symbol);
+        [time_bias] = SyncModify(est_symbol,period_sample,config,N_drop);
         pos_modify = pos + time_bias;
         if i == size(start_pos,2)
             size_symbol = play_seq(pos_modify+(2*silent_byte+1)*symbol_sample:pos_modify+(2*silent_byte+2)*symbol_sample-1);
             size_symbol = size_symbol(silent_period*period_sample+1:symbol_sample-silent_period*period_sample);
-            [I,Q] = Demodualte(size_symbol,config,N_drop,period_sample,window);
+            [I,Q] = Demodualte(size_symbol,config,N_drop,period_sample);
             [bit_seq] = Demapping(I,Q,attenuation,1);
             packet_size = bit_seq*[32,16,8,4,2,1].';
             packet_size = min(packet_size, packet_info_size(1));
@@ -30,8 +31,8 @@ function [decode_str] = Decode(play_seq,start_pos,config,packet_info_size)
             symbol_1 = symbol_1(silent_period*period_sample+1:symbol_sample-silent_period*period_sample);
             symbol_2 = play_seq(byte_start_pos+(byte_id-1)*2*symbol_sample+symbol_sample:byte_start_pos+(byte_id-1)*2*symbol_sample+2*symbol_sample-1);
             symbol_2 = symbol_2(silent_period*period_sample+1:symbol_sample-silent_period*period_sample);
-            [I1,Q1] = Demodualte(symbol_1,config,N_drop,period_sample,window);
-            [I2,Q2] = Demodualte(symbol_2,config,N_drop,period_sample,window);
+            [I1,Q1] = Demodualte(symbol_1,config,N_drop,period_sample);
+            [I2,Q2] = Demodualte(symbol_2,config,N_drop,period_sample);
             [bit_seq1] = Demapping(I1,Q1,attenuation,config.map_option);
             [bit_seq2] = Demapping(I2,Q2,attenuation,config.map_option);
             bit_seq = [bit_seq1,bit_seq2];
@@ -45,22 +46,26 @@ function [decode_str] = Decode(play_seq,start_pos,config,packet_info_size)
     end
 end
 
-function [attenuation] = ChannelEstimation(pilot_symbol, config, N_drop, period_sample, window)
-    sym_len = size(pilot_symbol,1);
-    symbol_cal = pilot_symbol(period_sample*N_drop+1:sym_len-period_sample*N_drop)./window;
-    cal_len = sym_len-2*period_sample*N_drop;
+
+function [attenuation] = ChannelEstimation(pilot_symbol)
+    %sym_len = size(pilot_symbol,1);
+    %symbol_cal = pilot_symbol(period_sample*N_drop+1:sym_len-period_sample*N_drop)./window;
+    %cal_len = sym_len-2*period_sample*N_drop;
     %attenuation = sqrt(2*sum(symbol_cal.*symbol_cal)/cal_len);
     attenuation = (max(pilot_symbol)-min(pilot_symbol))/2;
 end
 
-function [time_bias] = SyncModify(est_symbol,period_sample,config,N_drop,window)
-    [I,Q] = Demodualte(est_symbol,config,N_drop,period_sample,window);
+function [time_bias] = SyncModify(est_symbol,period_sample,config,N_drop)
+    [I,Q] = Demodualte(est_symbol,config,N_drop,period_sample);
     phase = angle(I+1j*Q);
     time_bias = round((-pi/2-phase)/(2*pi)*period_sample);
 end
-function [I,Q] = Demodualte(symbol_seq,config,N_drop,period_sample,window)
+function [I,Q] = Demodualte(symbol_seq,config,N_drop,period_sample)
     sym_len = size(symbol_seq,1);
-    symbol_cal = symbol_seq(period_sample*N_drop+1:sym_len-period_sample*N_drop)./window;
+    enve = abs(hilbert(symbol_seq));
+    enve = enve(period_sample*N_drop+1:sym_len-period_sample*N_drop);
+    enve = enve/max(enve);
+    symbol_cal = symbol_seq(period_sample*N_drop+1:sym_len-period_sample*N_drop)./enve;
     cal_len = sym_len-2*period_sample*N_drop;
     t = 1/config.sample_rate*(0:1:cal_len-1);
     carrier_sin = sin(2*pi*config.frequency*t);
