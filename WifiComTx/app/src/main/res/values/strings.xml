@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">WifiComTx</string>
+    <string-array name="item">
+        <item>16QAM</item>
+        <item>64QAM</item>
+    </string-array>
+</resources>
