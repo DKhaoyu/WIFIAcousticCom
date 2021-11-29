@@ -3,49 +3,80 @@ function [decode_str] = Decode(play_seq,start_pos,config,packet_info_size)
     symbol_sample = config.sps;
     period_sample = floor(config.sample_rate/config.frequency);
     N_drop = 15;
-    silent_byte = 2;
+    silent_sym = 2;
     silent_period = 0;
+    byte_sample = 4*symbol_sample;
     %window = hann(symbol_sample-2*period_sample*silent_period);
     %window = window(period_sample*N_drop+1:config.sps-period_sample*N_drop-2*period_sample*silent_period);
     for i = 1:size(start_pos,2)
         pos = start_pos(i);
-        est_symbol = play_seq(pos+2*silent_byte*symbol_sample:pos+(2*silent_byte+1)*symbol_sample-1);
+        est_symbol = play_seq(pos+silent_sym*symbol_sample:pos+(silent_sym+1)*symbol_sample-1);
         est_symbol = est_symbol(silent_period*period_sample+1:symbol_sample-silent_period*period_sample);
         %[attenuation] = ChannelEstimation(est_symbol, config, N_drop, period_sample, window);
         attenuation = ChannelEstimation(est_symbol);
         [time_bias] = SyncModify(est_symbol,period_sample,config,N_drop);
         pos_modify = pos + time_bias;
         if i == size(start_pos,2)
-            size_symbol = play_seq(pos_modify+(2*silent_byte+1)*symbol_sample:pos_modify+(2*silent_byte+2)*symbol_sample-1);
-            size_symbol = size_symbol(silent_period*period_sample+1:symbol_sample-silent_period*period_sample);
-            [I,Q] = Demodualte(size_symbol,config,N_drop,period_sample);
-            [bit_seq] = Demapping(I,Q,attenuation,1);
-            packet_size = bit_seq*[32,16,8,4,2,1].';
-            packet_size = min(packet_size, packet_info_size(1));
+            %size_symbol = play_seq(pos_modify+(silent_sym+1)*symbol_sample:pos_modify+(silent_sym+2)*symbol_sample-1);
+            %size_symbol = size_symbol(silent_period*period_sample+1:symbol_sample-silent_period*period_sample);
+            %[I,Q] = Demodualte(size_symbol,config,N_drop,period_sample);
+            %[bit_seq] = Demapping(I,Q,attenuation,1);
+            %packet_size = bit_seq*[32,16,8,4,2,1].';
+            %packet_size = min(packet_size, packet_info_size(1));
+            size_byte = play_seq(pos_modify+(silent_sym+1)*symbol_sample:pos_modify+(silent_sym+1)*symbol_sample+byte_sample-1);
+            packet_size = HammingDecode(size_byte,config,N_drop,period_sample,1,attenuation);
         else
             packet_size = packet_info_size(i);
         end
-        byte_start_pos = pos_modify+(2*silent_byte+2)*symbol_sample;
+        byte_start_pos = pos_modify+(silent_sym+1)*symbol_sample+byte_sample;
         for byte_id = 1:packet_size
-            symbol_1 = play_seq(byte_start_pos+(byte_id-1)*2*symbol_sample:byte_start_pos+(byte_id-1)*2*symbol_sample+symbol_sample-1);
-            symbol_1 = symbol_1(silent_period*period_sample+1:symbol_sample-silent_period*period_sample);
-            symbol_2 = play_seq(byte_start_pos+(byte_id-1)*2*symbol_sample+symbol_sample:byte_start_pos+(byte_id-1)*2*symbol_sample+2*symbol_sample-1);
-            symbol_2 = symbol_2(silent_period*period_sample+1:symbol_sample-silent_period*period_sample);
-            [I1,Q1] = Demodualte(symbol_1,config,N_drop,period_sample);
-            [I2,Q2] = Demodualte(symbol_2,config,N_drop,period_sample);
-            [bit_seq1] = Demapping(I1,Q1,attenuation,config.map_option);
-            [bit_seq2] = Demapping(I2,Q2,attenuation,config.map_option);
-            bit_seq = [bit_seq1,bit_seq2];
-            id = bit_seq*[0,64,32,16,8,4,2,1].';
+            %symbol_1 = play_seq(byte_start_pos+(byte_id-1)*2*symbol_sample:byte_start_pos+(byte_id-1)*2*symbol_sample+symbol_sample-1);
+            %symbol_1 = symbol_1(silent_period*period_sample+1:symbol_sample-silent_period*period_sample);
+            %symbol_2 = play_seq(byte_start_pos+(byte_id-1)*2*symbol_sample+symbol_sample:byte_start_pos+(byte_id-1)*2*symbol_sample+2*symbol_sample-1);
+            %symbol_2 = symbol_2(silent_period*period_sample+1:symbol_sample-silent_period*period_sample);
+            %[I1,Q1] = Demodualte(symbol_1,config,N_drop,period_sample);
+            %[I2,Q2] = Demodualte(symbol_2,config,N_drop,period_sample);
+            %[bit_seq1] = Demapping(I1,Q1,attenuation,config.map_option);
+            %[bit_seq2] = Demapping(I2,Q2,attenuation,config.map_option);
+            %bit_seq = [bit_seq1,bit_seq2];
+            %id = bit_seq*[0,64,32,16,8,4,2,1].';
+            id = HammingDecode(play_seq(byte_start_pos:byte_start_pos+byte_sample-1),config,N_drop,period_sample,0,attenuation);
             if id == 32
                 decode_str = strcat(decode_str," ");
             else
                 decode_str = strcat(decode_str,char(id));
             end
+            byte_start_pos = byte_start_pos + byte_sample;
         end
     end
 end
 
+function [id] = HammingDecode(byte_wave,config,N_drop,period_sample,flag,attenuation)
+    I = zeros(1,4);
+    Q = zeros(1,4);
+    bit_seq = zeros(1,16);
+    decode_byte = zeros(1,8);
+    H = [1,1,1,0,1,0,0,0;1,1,0,1,0,1,0,0;1,0,1,1,0,0,1,0;0,1,1,1,0,0,0,1];
+    for ii = 1:4
+        [I(ii),Q(ii)] = Demodulate(byte_wave((ii-1)*config.sps+1:ii*config.sps),config,N_drop,period_sample);
+        bit_seq((ii-1)*4+1:ii*4) = Demapping(I(ii),Q(ii),attenuation,config.map_option);
+    end
+    for ii = 1:2
+        error_map = mod(bit_seq((ii-1)*8+1:ii*8)*H.',2);
+        for v = 1:8
+            if(all(error_map == H(v,:)))
+                bit_seq((ii-1)*8+v) = 1-bit_seq((ii-1)*8+v);
+                break;
+            end
+        end
+        decode_byte((ii-1)*4+1:ii*4) = bit_seq((ii-1)*8+1:(ii-1)*8+4);
+    end
+    if flag
+        id = bi2de(decode_byte(3:8),'left-msb');
+    else
+        id = bi2de(decode_byte,'left-msb');
+    end
+end
 
 function [attenuation] = ChannelEstimation(pilot_symbol)
     %sym_len = size(pilot_symbol,1);
@@ -125,7 +156,7 @@ function [bit_seq] = Demapping(I,Q,attenuation,map_option)
                 I_norm = -7*A;
             elseif -6*A_norm<I&&I<-4*A_norm
                 I_norm = -5*A;
-            elseif --4*A_norm<I&&I<-2*A_norm
+            elseif -4*A_norm<I&&I<-2*A_norm
                 I_norm = -3*A;
             elseif -2*A_norm<I&&I<0
                 I_norm = -A;
@@ -142,7 +173,7 @@ function [bit_seq] = Demapping(I,Q,attenuation,map_option)
                 Q_norm = -7*A;
             elseif -6*A_norm<Q&&Q<-4*A_norm
                 Q_norm = -5*A;
-            elseif --4*A_norm<Q&&Q<-2*A_norm
+            elseif -4*A_norm<Q&&Q<-2*A_norm
                 Q_norm = -3*A;
             elseif -2*A_norm<Q&&Q<0
                 Q_norm = -A;

@@ -1,12 +1,14 @@
 function [play_seq, config, header] = EncodeModule(text,config)
 %% encoder parameter initialize
     byte_len = size(text,2);
-    raw_bit = reshape(de2bi(abs(text),'left-msb',8).',1,8*byte_len);
+    raw_bytes = reshape(de2bi(abs(text),8,'left-msb').',1,8*byte_len);
+    encode_bit = Hamming84(raw_bytes);
+    % raw_bit = reshape(de2bi(abs(text),'left-msb',8).',1,8*byte_len);
     config.packet_num = ceil(byte_len/(config.packet_size-config.pilot_size-1));
     config.tail_size = mod(byte_len,config.packet_size-config.pilot_size-1);
     config.Ts = config.sps/config.sample_rate;
 %% mapping
-    [dot_seq] = Mapping(config, raw_bit);
+    [dot_seq] = Mapping(config, encode_bit);
 %% genHeader
     [header] = GenHeader(config);
 %% assmeble packet
@@ -17,7 +19,7 @@ function [play_seq, config, header] = EncodeModule(text,config)
     sound(play_seq,config.sample_rate);
     figure;
     plot(1/config.sample_rate*(0:1:size(play_seq,2)-1),play_seq);
-    filename = strcat(datestr(datetime,'yyyy-mm-dd HH-MM-SS'),'.wav');
-    audiowrite(filename,play_seq,config.sample_rate);
+    %filename = strcat(datestr(datetime,'yyyy-mm-dd HH-MM-SS'),'.wav');
+    %audiowrite(filename,play_seq,config.sample_rate);
 end
 

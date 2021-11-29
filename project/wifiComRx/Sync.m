@@ -27,7 +27,8 @@ function [start_seq,packet_info_size] = Sync(header,play_seq,config)
             %}
             frame = frame + 1;
             temp_pos = exist_pos(i)*chirp_len+pos_vote;
-            temp_corr = 1/norm_coef*sum(header.*play_seq(temp_pos-chirp_len+1:temp_pos));
+            block = play_seq(temp_pos-chirp_len+1:temp_pos);
+            [temp_corr] = max(1/norm_coef*abs(ifft(fft(block).*conj(fft(header)))));
             if temp_corr > th
                 start_seq = [start_seq,temp_pos];
             else
