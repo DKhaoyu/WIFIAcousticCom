@@ -2,8 +2,8 @@ function [decode_str] = Decode(play_seq,start_pos,config,packet_info_size)
     decode_str = "";
     symbol_sample = config.sps;
     period_sample = floor(config.sample_rate/config.frequency);
-    N_drop = 15;
-    silent_sym = 2;
+    N_drop = 20;
+    silent_sym = 3;
     silent_period = 0;
     byte_sample = 4*symbol_sample;
     %window = hann(symbol_sample-2*period_sample*silent_period);
@@ -23,8 +23,12 @@ function [decode_str] = Decode(play_seq,start_pos,config,packet_info_size)
             %[bit_seq] = Demapping(I,Q,attenuation,1);
             %packet_size = bit_seq*[32,16,8,4,2,1].';
             %packet_size = min(packet_size, packet_info_size(1));
+            
             size_byte = play_seq(pos_modify+(silent_sym+1)*symbol_sample:pos_modify+(silent_sym+1)*symbol_sample+byte_sample-1);
             packet_size = HammingDecode(size_byte,config,N_drop,period_sample,1,attenuation);
+            if size(packet_info_size,2)>0
+                packet_size = min(packet_info_size(1),packet_size);
+            end
         else
             packet_size = packet_info_size(i);
         end
@@ -64,7 +68,7 @@ function [id] = HammingDecode(byte_wave,config,N_drop,period_sample,flag,attenua
     for ii = 1:2
         error_map = mod(bit_seq((ii-1)*8+1:ii*8)*H.',2);
         for v = 1:8
-            if(all(error_map == H(v,:)))
+            if(all(error_map == H(:,v).'))
                 bit_seq((ii-1)*8+v) = 1-bit_seq((ii-1)*8+v);
                 break;
             end
@@ -74,7 +78,7 @@ function [id] = HammingDecode(byte_wave,config,N_drop,period_sample,flag,attenua
     if flag
         id = bi2de(decode_byte(3:8),'left-msb');
     else
-        id = bi2de(decode_byte,'left-msb');
+        id = bi2de(decode_byte(2:8),'left-msb');
     end
 end
 
@@ -87,11 +91,11 @@ function [attenuation] = ChannelEstimation(pilot_symbol)
 end
 
 function [time_bias] = SyncModify(est_symbol,period_sample,config,N_drop)
-    [I,Q] = Demodualte(est_symbol,config,N_drop,period_sample);
+    [I,Q] = Demodulate(est_symbol,config,N_drop,period_sample);
     phase = angle(I+1j*Q);
     time_bias = round((-pi/2-phase)/(2*pi)*period_sample);
 end
-function [I,Q] = Demodualte(symbol_seq,config,N_drop,period_sample)
+function [I,Q] = Demodulate(symbol_seq,config,N_drop,period_sample)
     sym_len = size(symbol_seq,1);
     enve = abs(hilbert(symbol_seq));
     enve = enve(period_sample*N_drop+1:sym_len-period_sample*N_drop);
@@ -99,8 +103,13 @@ function [I,Q] = Demodualte(symbol_seq,config,N_drop,period_sample)
     symbol_cal = symbol_seq(period_sample*N_drop+1:sym_len-period_sample*N_drop)./enve;
     cal_len = sym_len-2*period_sample*N_drop;
     t = 1/config.sample_rate*(0:1:cal_len-1);
-    carrier_sin = sin(2*pi*config.frequency*t);
-    carrier_cos = cos(2*pi*config.frequency*t);
+    temp = abs(fft(symbol_cal));
+    [val,pos] = max(temp(1:floor(cal_len/2)));
+    freq_est = (pos-1)/cal_len*config.sample_rate;
+    %carrier_sin = sin(2*pi*config.frequency*t);
+    %carrier_cos = cos(2*pi*config.frequency*t);
+    carrier_sin = sin(2*pi*freq_est*t);
+    carrier_cos = cos(2*pi*freq_est*t);
     I = 2/cal_len*sum(symbol_cal.'.*carrier_cos);
     Q = -2/cal_len*sum(symbol_cal.'.*carrier_sin);
 end

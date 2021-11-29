@@ -6,7 +6,7 @@ function [dot_seq] = Mapping(config, raw_bit)
             dot_seq = zeros(4*config.packet_num+sym_len,2);
             info_size_seq = (config.packet_size-config.pilot_size-1)*ones(config.packet_num,1);
             if(config.tail_size>0)
-                info_size_seq(config.packet_num) = 4*config.tail_size;
+                info_size_seq(config.packet_num) = config.tail_size;
             end
             sym_pos = 1;
             for i=1:config.packet_num
@@ -16,10 +16,12 @@ function [dot_seq] = Mapping(config, raw_bit)
                 encode_length_bit(9:16) = Hamming84(length_bit(5:8));
                 for j = 1:4
                     id = bi2de(encode_length_bit((j-1)*4+1:4*j),'left-msb');
-                    dot_seq(sym_pos,1) = QAM(0,id);
+                    [I,Q] = QAM(0,id);
+                    dot_seq(sym_pos,1) = I;
+                    dot_seq(sym_pos,2) = Q;
                     sym_pos = sym_pos + 1;
                 end
-                for j = 1:info_size_seq(i)
+                for j = 1:4*info_size_seq(i)
                     %sym_pos = (i-1)*(4*(config.packet_size-config.pilot_size))+j;
                     bit_start_pos = 4*(sym_pos-4*i-1)+1;
                     %id = 8*raw_bit(bit_start_pos)+4*raw_bit(bit_start_pos+1)+2*raw_bit(bit_start_pos+2)+raw_bit(bit_start_pos+3);
