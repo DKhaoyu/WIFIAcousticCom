@@ -8,6 +8,7 @@ function [play_seq] = Assemble(config,header,dot_seq)
             silent_sym = 3;
             silent_period = 0;
             period_sample = config.sample_rate/config.frequency;
+            transition_period = 20;
             full_packet_sample = (config.pilot_size)*2*config.sps+(config.packet_size-config.pilot_size)*4*config.sps+silent_sym*config.sps;
             %packet_sample_seq = 2*(config.packet_size-config.pilot_size-1)*config.sps*ones(1,config.packet_num);
             packet_symbol_num_seq = 4*(config.packet_size-config.pilot_size-1)*ones(1,config.packet_num);
@@ -19,7 +20,9 @@ function [play_seq] = Assemble(config,header,dot_seq)
             else
                 play_seq = zeros(1,full_packet_sample*config.packet_num);
             end
-            window = [zeros(silent_period*period_sample,1);hann(config.sps-2*silent_period*period_sample);zeros(silent_period*period_sample,1)].';
+            %window = [zeros(silent_period*period_sample,1);hann(config.sps-2*silent_period*period_sample);zeros(silent_period*period_sample,1)].';
+            %window = [zeros(silent_period*period_sample,1);ones(config.sps-2*silent_period*period_sample,1);zeros(silent_period*period_sample,1)].';
+            window = TrapezoidWondow(config,silent_period,transition_period);
             t_sym = 1/config.sample_rate*(0:1:config.sps-1);
             sym_id = 1;
             for i=1:config.packet_num
@@ -49,4 +52,11 @@ function [play_seq] = Assemble(config,header,dot_seq)
        otherwise
            error("Wrong Mapping Option!");
    end
+end
+
+function [window] = TrapezoidWondow(config,silent_period,transition_period)
+    period_sample = config.sample_rate/config.frequency;
+    lh_transition = 1/(transition_period*period_sample)*(0:transition_period*period_sample-1);
+    hl_transition = fliplr(lh_transition);
+    window = [zeros(silent_period*period_sample,1);lh_transition.';ones(config.sps-2*(silent_period+transition_period)*period_sample,1);hl_transition.';zeros(silent_period*period_sample,1)].';
 end
