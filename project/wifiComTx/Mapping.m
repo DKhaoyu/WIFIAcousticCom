@@ -69,6 +69,10 @@ function [I,Q] = QAM(map_option, id)
                 otherwise
                     error("Wrong Mapping for 16QAM");
             end
+            if abs(Q)+abs(I)==4*A
+                I = 0.8*I;
+                Q = 0.8*Q;
+            end
         case 1
             A = 0.101;
             I_id = mod(id,8);

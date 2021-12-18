@@ -1,4 +1,5 @@
 function [decode_str] = Decode(play_seq,start_pos,config,packet_info_size)
+    total_sample = size(play_seq,1);
     decode_str = "";
     symbol_sample = config.sps;
     period_sample = floor(config.sample_rate/config.frequency);
@@ -6,6 +7,10 @@ function [decode_str] = Decode(play_seq,start_pos,config,packet_info_size)
     silent_sym = 3;
     silent_period = 0;
     byte_sample = 4*symbol_sample;
+    I_seq = [];
+    Q_seq = [];
+    
+    pilot_cal = fft();
     %window = hann(symbol_sample-2*period_sample*silent_period);
     %window = window(period_sample*N_drop+1:config.sps-period_sample*N_drop-2*period_sample*silent_period);
     for i = 1:size(start_pos,2)
@@ -25,7 +30,9 @@ function [decode_str] = Decode(play_seq,start_pos,config,packet_info_size)
             %packet_size = min(packet_size, packet_info_size(1));
             
             size_byte = play_seq(pos_modify+(silent_sym+1)*symbol_sample:pos_modify+(silent_sym+1)*symbol_sample+byte_sample-1);
-            packet_size = HammingDecode(size_byte,config,N_drop,period_sample,1,attenuation);
+            [packet_size,I,Q] = HammingDecode(size_byte,config,N_drop,period_sample,1,attenuation);
+            I_seq = [I_seq,I];
+            Q_seq = [Q_seq,Q];
             if size(packet_info_size,2)>0
                 packet_size = min(packet_info_size(1),packet_size);
             end
@@ -44,7 +51,12 @@ function [decode_str] = Decode(play_seq,start_pos,config,packet_info_size)
             %[bit_seq2] = Demapping(I2,Q2,attenuation,config.map_option);
             %bit_seq = [bit_seq1,bit_seq2];
             %id = bit_seq*[0,64,32,16,8,4,2,1].';
-            id = HammingDecode(play_seq(byte_start_pos:byte_start_pos+byte_sample-1),config,N_drop,period_sample,0,attenuation);
+            if byte_start_pos+byte_sample>total_sample
+                break;
+            end
+            [id,I,Q] = HammingDecode(play_seq(byte_start_pos:byte_start_pos+byte_sample-1),config,N_drop,period_sample,0,attenuation);
+            I_seq = [I_seq,I];
+            Q_seq = [Q_seq,Q];
             if id == 32
                 decode_str = strcat(decode_str," ");
             else
@@ -53,9 +65,11 @@ function [decode_str] = Decode(play_seq,start_pos,config,packet_info_size)
             byte_start_pos = byte_start_pos + byte_sample;
         end
     end
+    figure;
+    scatter(I_seq,Q_seq);
 end
 
-function [id] = HammingDecode(byte_wave,config,N_drop,period_sample,flag,attenuation)
+function [id,I,Q] = HammingDecode(byte_wave,config,N_drop,period_sample,flag,attenuation)
     I = zeros(1,4);
     Q = zeros(1,4);
     bit_seq = zeros(1,16);
@@ -95,12 +109,14 @@ function [time_bias] = SyncModify(est_symbol,period_sample,config,N_drop)
     phase = angle(I+1j*Q);
     time_bias = round((-pi/2-phase)/(2*pi)*period_sample);
 end
+
 function [I,Q] = Demodulate(symbol_seq,config,N_drop,period_sample)
     sym_len = size(symbol_seq,1);
     enve = abs(hilbert(symbol_seq));
     enve = enve(period_sample*N_drop+1:sym_len-period_sample*N_drop);
     enve = enve/max(enve);
     symbol_cal = symbol_seq(period_sample*N_drop+1:sym_len-period_sample*N_drop)./enve;
+    %symbol_cal = symbol_seq(period_sample*N_drop+1:sym_len-period_sample*N_drop);
     cal_len = sym_len-2*period_sample*N_drop;
     t = 1/config.sample_rate*(0:1:cal_len-1);
     temp = abs(fft(symbol_cal));
@@ -113,7 +129,6 @@ function [I,Q] = Demodulate(symbol_seq,config,N_drop,period_sample)
     I = 2/cal_len*sum(symbol_cal.'.*carrier_cos);
     Q = -2/cal_len*sum(symbol_cal.'.*carrier_sin);
 end
-
 function [bit_seq] = Demapping(I,Q,attenuation,map_option)
     switch map_option
         case 0
